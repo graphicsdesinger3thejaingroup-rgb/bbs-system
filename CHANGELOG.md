@@ -1,0 +1,381 @@
+# CHANGELOG — v1 → v2 → v3 → v3.3 Surgical Fixes
+
+## 🔧 v3.3 — Quantity Mode Toggle (Standard / Conservative / Exact)
+
+### Why this iteration
+
+After v3.2 used `ceil(L/s) + 1`, the spec was refined: the **default** should
+be `floor(L/s) + 1` (matches common Indian BBS textbook practice), with a
+toggle for two alternative modes.
+
+### Three modes available
+
+| Mode | Formula | When to use |
+|---|---|---|
+| **Standard** (default) | `floor(L/s) + 1` | Common BBS practice — most jobs |
+| **Conservative** | `floor(L/s) + 2` | +1 extra stirrup for site safety margin |
+| **Exact** | `ceil(L/s) + 1` | Strict mathematical interpretation |
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `services/calculator.py` | New constants `QTY_MODE_STANDARD/CONSERVATIVE/EXACT`. Both `stirrup_quantity()` and `bar_count_along()` accept `qty_mode` parameter. Default = `standard` (= `floor + 1`). All 3 element calculators (`calculate_beam/column/slab`) read `payload["qty_mode"]` and pass it through. |
+| `services/validator.py` | New `ALLOWED_QTY_MODES` set. Section 4b validates `qty_mode` if present, rejects unknown values, emits an info-warning when conservative is active. Field is OPTIONAL — if absent, defaults silently to standard. |
+| `frontend/index.html` | New `<select name="qty_mode">` between the Lap Length row and the Engineering Verified checkbox. Includes a live helper text showing the current formula. |
+| `frontend/app.js` | Adds string-field reader `s(name)`; includes `qty_mode` in every payload (defaults to `"standard"` if no `<select>` present). Live-updates the helper hint text on selection change. |
+| `tests.py` | 4 existing tests updated (back to `floor+1` defaults). 8 new tests added for mode toggle + validator coverage. |
+
+### Verified through full pipeline
+
+For the standard beam (300×450, 6m span, stirrup 8mm @ 150mm):
+
+```
+effective length = 6000 - 50 = 5950 mm
+ratio = 5950 / 150 = 39.67
+
+standard      → floor(39.67) + 1 = 40    ✓
+conservative  → floor(39.67) + 2 = 41    ✓ (with info-warning)
+exact         → ceil(39.67)  + 1 = 41    ✓
+```
+
+For the slab (3500×5000):
+
+```
+main: ratio = 4960/150 = 33.07
+  standard=34  conservative=35  exact=35
+dist: ratio = 3460/200 = 17.30
+  standard=18  conservative=19  exact=19
+```
+
+### Backward compatibility
+
+- Payloads sent **without** `qty_mode` field continue to work — defaults silently to standard.
+- Tests confirmed that omitting `qty_mode` produces identical output to passing `qty_mode: "standard"`.
+
+### Test status
+
+**All 53 tests pass** (was 45; +8 new mode-related tests):
+
+- `test_bar_count_along_modes` — slab bar counts in all 3 modes
+- `test_beam_stirrup_qty_modes` — beam stirrups in all 3 modes
+- `test_column_tie_qty_modes` — column ties in all 3 modes
+- `test_slab_qty_modes` — slab main+dist in all 3 modes
+- `test_qty_mode_valid_values` — all 3 valid strings accepted
+- `test_qty_mode_invalid_rejected` — typos like "aggressive" rejected
+- `test_qty_mode_conservative_emits_info_warning` — UX warning fires
+- `test_qty_mode_omitted_uses_default` — backward compat
+
+---
+
+## 🔧 v3.2 — Column & Slab Spec Compliance
+
+### What this iteration fixes (vs v3.1)
+
+| # | Spec rule | Status before | Status now |
+|---|---|---|---|
+| 1 | Column main bar = `height − 2·cover + lap`, NO hooks | Used beam formula (added 2·hook) | New `calc_column_main_bar_length()` — straight + lap only |
+| 2 | If lap not provided → default = `50·d` | Defaulted to 0 (no lap) | Auto-substitutes 50·d when `lap_length` is 0/missing |
+| 3 | Column min 4 main bars (IS 456 cl. 26.5.3.1.a) | No check | Validator rejects with proper IS 456 reference |
+| 4 | Slab: auto-detect short/long span (smaller=short, larger=long) | Worked only via legacy fallback | Always auto-swaps via `min/max`, regardless of source |
+| 5 | Slab/tie qty = `ceil(span/spacing) + 1` (round UP) | Used `floor + 1` (round DOWN+1) | Both `bar_count_along()` and `stirrup_quantity()` use `ceil` |
+| 6 | Warning if column has no lap input | None | Warns "Lap not provided — using default 50·d = N mm" |
+| 7 | Slab span auto-swap notification | Said "auto-corrected" but didn't actually swap | Now actually swaps + tells user |
+
+### Files touched
+
+| File | What changed |
+|---|---|
+| `services/calculator.py` | New `calc_column_main_bar_length()` and `DEFAULT_COLUMN_LAP_FACTOR=50`. `calculate_column()` rewritten to use new helper + auto-default lap. `bar_count_along()` and `stirrup_quantity()` switched from `floor+1` to `ceil+1`. `calculate_slab()` always auto-swaps short/long. |
+| `services/validator.py` | New section 6b: column min-4-bars rule + missing-lap warning. Section 7 now explicitly says "auto-detected & swapped". |
+| `tests.py` | 3 existing tests updated (the qty hardcoded values changed because of the ceil rule). 9 new tests added covering all spec features. |
+
+### Hand-verified spec test cases
+
+#### Column (300×300, height 3000, cover 40, 20mm dia × 6 bars, 8mm tie @ 200mm)
+- M1 main bar: `3000 − 80 + 50·20` = **3920 mm** ✓ (default lap kicks in)
+- T1 tie: `2(220+220) + 2(80) − 4(16)` = **976 mm** ✓
+- T1 qty: `⌈(3000−80)/200⌉ + 1` = `⌈14.6⌉+1` = **16** ✓
+
+#### Slab (3500 × 5000, cover 20, 10mm @ 150 main, 8mm @ 200 dist)
+- M1 main: `3500 − 40 + 2·100` = **3660 mm** ✓
+- M1 qty: `⌈(5000−40)/150⌉+1` = `⌈33.07⌉+1` = **35** ✓
+- D1 dist: `5000 − 40` = **4960 mm** ✓ (no hooks)
+- D1 qty: `⌈(3500−40)/200⌉+1` = `⌈17.3⌉+1` = **19** ✓
+
+### Test status
+**All 45 tests pass** (was 36; +9 new tests):
+
+- `test_column_main_bar_no_hooks_default_lap` — verifies new column formula + default lap
+- `test_column_main_bar_explicit_lap` — verifies explicit lap overrides default
+- `test_column_tie_qty_round_up` — verifies ceil rule for ties
+- `test_column_tie_cutting_length` — sanity check tie formula
+- `test_slab_auto_swaps_short_long` — auto-swap regardless of input order
+- `test_column_minimum_4_bars` — 3 bars rejected
+- `test_column_4_bars_passes` — boundary: 4 bars allowed
+- `test_column_lap_default_warning` — warning emitted when lap missing
+- `test_column_high_tie_spacing_warning` — warning emitted when spacing > 300
+
+---
+
+## 🔧 v3.1 — Stirrup Formula Bug Fix (CRITICAL)
+
+**What was wrong:** the stirrup cutting-length formula in v3 produced
+results 64 mm short of the IS 2502 spec because of two compounding bugs.
+
+### Bug 1 — Double subtraction of bar diameter
+`a` and `b` were calculated as `width - 2*cover - dia` and
+`depth - 2*cover - dia`. The exact IS 2502 formula uses just
+`width - 2*cover` and `depth - 2*cover` (no `-dia`).
+
+### Bug 2 — Wrong bend deduction for 135° hooks
+Old code used `3·d` per bend for 135° hooks. The exact spec formula
+`L = 2(a+b) + 2(10d) - 4(2d)` uses **2d per bend, regardless of hook
+type** — the larger 135° leg already accounts for it via `2(10d)`.
+
+### Combined effect
+For a 250×500 beam with 25 mm cover and 8 mm stirrup:
+
+|              | a   | b   | 2(a+b) | hooks | bend ded. | Total |
+|--------------|-----|-----|--------|-------|-----------|-------|
+| v3 (buggy)   | 192 | 442 | 1268   | 160   | 96 (4·24) | 1332  |
+| v3.1 (fixed) | 200 | 450 | 1300   | 160   | 64 (4·16) | **1396** ✓ |
+
+Off by exactly 64 mm — sounds small, but on a beam with 40 stirrups it's
+**2.56 m of extra steel under-counted** per beam. On a real building
+project this compounds into hundreds of kilograms of mis-ordered steel.
+
+### Files changed
+- `backend/services/calculator.py` — `calc_stirrup_length()` rewritten with the exact formula. The old `bend_deduction()` helper kept but marked DEPRECATED so any external imports keep working.
+- `backend/tests.py` — 2 existing tests updated (they hardcoded the buggy 1332), 3 new regression tests added:
+  - `test_stirrup_length_spec_example` — tests the exact spec example (1396)
+  - `test_stirrup_no_double_subtraction` — verifies `dia` is not subtracted from `a`/`b`
+  - `test_stirrup_length_90_hook` — verifies 90° hook still uses 2d bend deduction
+
+### Test status
+All **36 tests pass** (was 33; +3 new regression tests).
+
+### Verification table (verified by hand)
+
+| Section | Cover | Dia | Hook | a | b | Result |
+|---------|-------|-----|------|---|---|--------|
+| 250×500 | 25    | 8   | 135° | 200 | 450 | **1396** ✓ |
+| 300×450 | 25    | 8   | 135° | 250 | 400 | 1396 |
+| 300×450 | 25    | 10  | 135° | 250 | 400 | 1420 |
+| 300×450 | 25    | 8   | 90°  | 250 | 400 | 1380 |
+| 200×300 | 20    | 6   | 135° | 160 | 260 |  912 |
+| 400×600 | 30    | 10  | 135° | 340 | 540 | 1880 |
+
+---
+
+## 🔄 v3 — Fully Responsive (Mobile + Tablet + Desktop)
+
+**Goal:** make the existing UI work flawlessly on every device size from
+iPhone SE (320 px) up to 1920 px desktop monitors.
+**Approach:** CSS-only enhancements + small JS additions. **No backend
+or business-logic changes** — backend still passes all 33 tests.
+
+### Files touched
+
+| File | What changed | Why |
+|---|---|---|
+| `frontend/index.html` | Added responsive `<meta>` tags, mobile-first CSS, breakpoint-aware Tailwind classes | iOS zoom prevention, safe-area for notches, touch targets |
+| `frontend/index.html` | New `.responsive-table` styles (collapse to cards on `<640px`) | 8-column tables don't fit on phones — collapse to label/value pairs |
+| `frontend/index.html` | Form sidebar made `lg:sticky` | Keeps inputs visible while user scrolls long results on desktop |
+| `frontend/app.js` | Added `data-label` attribute to every `<td>` | Provides the label shown in mobile card view |
+
+### Breakpoint strategy
+
+| Width | Layout |
+|---|---|
+| `<640px` (mobile) | Single column. Tables collapse to vertical card view. Buttons full-width, stacked. |
+| `640–1024px` (tablet) | Single column, but tables stay as horizontal grids. Bigger header. |
+| `≥1024px` (desktop) | 3-column grid: form on left (sticky), results span 2 cols on right. |
+
+### Mobile-specific improvements
+
+1. **iOS zoom prevention** — All inputs use `font-size: 16px` (anything smaller triggers auto-zoom on focus in iOS Safari).
+2. **44px touch targets** — Every input/button has `min-height: 44px` (Apple HIG / WCAG 2.5.5).
+3. **Safe-area padding** — Uses `env(safe-area-inset-*)` for notched phones.
+4. **Tap highlight removed** — `-webkit-tap-highlight-color: transparent` for cleaner tap feedback.
+5. **No horizontal scroll** — `body { overflow-x: hidden }` + `truncate` on header text.
+6. **Card-view tables** — Below 640px, the `<thead>` is hidden and each row becomes a vertical card with each cell showing `LABEL ........ value` thanks to the `data-label` attributes.
+
+### Tested viewports (all green ✓)
+
+- 320×568 — iPhone SE / smallest reasonable phone
+- 375×812 — iPhone X/13
+- 768×1024 — iPad portrait
+- 1440×900 — typical laptop
+- 1920×1080 — large desktop
+
+Visual regression test in `/tmp/responsive_screenshots/` confirmed all layouts work for Beam, Column, and Slab modes.
+
+---
+
+## 🔄 v2 — Element Logic Separation
+
+
+This document explains every change made on top of v1, file-by-file.
+**Nothing was rewritten blindly** — only the broken / mixed parts were touched.
+
+---
+
+## 🎯 Goals from the spec → Solutions
+
+| # | Spec requirement | Where fixed |
+|---|---|---|
+| 1 | Element logic separation (no mixing) | `calculator.py` — split into `calculate_beam/column/slab` |
+| 2 | Conditional input system | `index.html` + `app.js` — show/hide sections by element |
+| 3 | Correct calculation logic per element | Each `calculate_*` function has only its own formulas |
+| 4 | Hook & cover rules (135° = 10d) | Already correct in v1 (`hook_length()`), now reused via helpers |
+| 5 | Weight = (d²/162) × L | Centralised in `_make_row()` helper — single source of truth |
+| 6 | Error-proof validation + warnings | `validator.py` — returns `(ok, errors, warnings)` |
+| 7 | Double-check engine | `calculator.py` — `double_check_rows()` recomputes & compares |
+| 8 | BBS table includes Element column | `excel_generator.py`, `pdf_generator.py`, `app.js` table |
+| 9 | Final order (group + 5% + 12 m, round UP) | `build_final_order()` — extracted from old monolith |
+| 10 | UI: calc steps toggle + verified mode | `app.js` — `renderSteps()` + `engVerifiedMode` checkbox |
+| 11 | Modular backend functions | `calculator.py` — clean dispatcher pattern |
+| 12 | Test cases for beam/slab/column | `tests.py` — 33 unit tests |
+| 13 | 95%+ accurate | All math verified by hand against IS 2502 |
+
+---
+
+## 📁 File-by-file changes
+
+### `backend/services/calculator.py` — biggest refactor
+
+**Before (v1):** one giant `build_bbs()` function with `if et == "beam" / "column" / "slab"` branches inline. Slab incorrectly reused `stirrup_dia` and `stirrup_spacing` field names for distribution bars. Distribution bars wrongly had hooks added.
+
+**After (v2):**
+- Added helper `calc_distribution_bar_length(span, cover)` — straight bar, **no hooks** (per IS 456 distribution bars don't need stirrup-style hooks).
+- Added helper `bar_count_along(span, spacing, cover)` — used for both slab main bars and distribution bars.
+- New helper `_make_row()` — single place where every row's `cutting_length`, `total_length`, `unit_weight`, `total_weight` is computed. Eliminates the v1 copy-paste in the row-creation block.
+- **`calculate_beam(p)`** — main bars + stirrups ONLY. Returns 2 rows.
+- **`calculate_column(p)`** — main bars + ties (T1 not S1) ONLY. Returns 2 rows. Description says "Vertical Bar" / "Lateral Tie".
+- **`calculate_slab(p)`** — main bars (along shorter span) + distribution bars (along longer span, no hooks) ONLY. Returns 2 rows. Reads new field names `short_span`, `long_span`, `main_bar_spacing`, `dist_bar_dia`, `dist_bar_spacing`. Falls back to old `length`+`width`+`stirrup_*` for backward compatibility.
+- **`build_final_order(rows)`** — extracted final-order logic into its own function. Same 5%-wastage and `ceil(order_len / 12)` rod rounding as v1.
+- **`double_check_rows(rows, tolerance=0.05)`** — NEW. For every row: recomputes `total_length = cutting_length × quantity` and `weight = total_length × d²/162`, and flags any drift > 0.05 kg or > 0.01 m. Returns list of human-readable mismatch messages.
+- **`build_bbs(payload)`** — now just a dispatcher. Picks the right `calculate_*`, runs `build_final_order`, runs `double_check_rows`, packages the output with a new `verification` field.
+
+The unchanged helpers (`hook_length`, `bend_deduction`, `unit_weight`, `calc_main_bar_length`, `calc_stirrup_length`, `stirrup_quantity`, `round_up`) are kept as-is — they were already correct in v1.
+
+---
+
+### `backend/services/validator.py` — element-aware
+
+**Before (v1):** flat list of required fields. Slab payloads were wrongly required to send `stirrup_dia` and `stirrup_spacing`. Returned `(ok, errors)`.
+
+**After (v2):**
+- `COMMON_REQUIRED` for fields needed by every element.
+- `ELEMENT_REQUIRED["beam"|"column"]` for element-specific fields.
+- Slab handled by separate `_slab_has_required()` because of the (`short_span`+`long_span`) **OR** (`length`+`width`) rule plus distribution-bar fields with backward-compat fallback.
+- Added `WARNING_RULES` — engineering-judgment soft warnings (advisory, not blocking) for: cover < 15 mm, stirrup spacing > 300 mm, etc.
+- Return signature changed to `(ok, errors, warnings)` — `app.py` and any frontend code that consumes it had to be updated.
+- `RANGES` table extended for `short_span`, `long_span`, `main_bar_spacing`, `dist_bar_dia`, `dist_bar_spacing`.
+
+---
+
+### `backend/app.py` — wired in warnings + verification
+
+- All 3 endpoints (`/calculate`, `/download-excel`, `/download-pdf`) now unpack the 3-tuple `(ok, errs, warns)`.
+- `/calculate` injects `warnings` into the response payload and returns **HTTP 500** if `verification.passed` is False.
+- `/download-excel` and `/download-pdf` refuse to export if verification fails — protects you from generating reports with internal mismatches.
+
+---
+
+### `backend/services/excel_generator.py`
+
+- New "Element" column added to BBS_Data sheet (column B).
+- Header merge updated `A1:I1` → `A1:J1`.
+- Totals row column indices shifted by 1 (length goes to col 8, weight goes to col 10).
+- Verification stamp row added below totals: green "✓ Engineering Verified" or red "✗ VERIFICATION FAILED".
+
+---
+
+### `backend/services/pdf_generator.py`
+
+- New "Element" column added to BBS table (column 2).
+- Input parameters table is now element-aware:
+  - Beam → shows Width / Depth / Length / Stirrup Dia / Stirrup Spacing
+  - Column → shows Width / Depth / Height / Tie Dia / Tie Spacing
+  - Slab → shows Shorter Span / Longer Span / Main Bar Spacing / Dist. Bar Dia / Dist. Bar Spacing
+  - No more confusing "Stirrup Dia: -" rows on slab reports.
+- Verification stamp paragraph at the end (green or red).
+
+---
+
+### `frontend/index.html`
+
+- 3 new section IDs that show/hide based on element type:
+  - `#beamColumnDims` (width/depth/length) vs `#slabDims` (short_span/long_span)
+  - `#mainQtyField` (beam/column) vs `#mainSpacingField` (slab)
+  - `#stirrupSection` (beam) vs `#tieSection` (column) vs `#distSection` (slab)
+- Labels for "Depth" and "Length" are dynamic (column shows "Height" instead of "Length").
+- New "Engineering Verified Mode" checkbox — when ON, blocks Excel/PDF export if double-check failed.
+- New buttons:
+  - "Show calculation steps" toggle (toggles `#stepsPanel`)
+- Error and Warning boxes styled separately (red vs amber).
+- Verification banner card (green ✓ or red ✗) appears between summary and BBS table.
+
+---
+
+### `frontend/app.js`
+
+- New `refreshConditionalFields()` runs whenever element-type toggle is clicked, AND once on page load.
+- `gatherPayload()` now builds **only the fields relevant to the current element type** — no stray `stirrup_dia` in slab requests.
+- Column UI uses `tie_dia` / `tie_spacing` fields locally but maps them to backend's `stirrup_dia` / `stirrup_spacing` (avoids duplicating the backend field set just for column).
+- New render functions:
+  - `renderVerifyBanner(v)` — green or red card showing double-check result
+  - `renderSteps(rows)` — human-readable step trace inside `<pre>` panel
+  - `showWarnings(msgs)` — amber box separate from errors
+- `download()` checks `engVerifiedMode` checkbox: if ON and last verification failed, blocks the download with an explanatory message.
+- `clientValidate()` is now element-aware (only validates fields that are actually present in the payload).
+
+---
+
+### `backend/tests.py` — NEW (was missing in v1)
+
+33 unit tests organised into:
+- **HelperTests** (6) — `hook_length`, `unit_weight`, `calc_main_bar_length`, `calc_stirrup_length`, `bar_count_along`
+- **BeamTests** (4) — verifies beam returns ONLY M1+S1 (no D1!), known cutting-length values
+- **ColumnTests** (3) — verifies column returns ONLY M1+T1 (no D1, no S1!)
+- **SlabTests** (6) — verifies slab returns ONLY M1+D1 (no S1!), distribution bar has no hook, main bar uses shorter span, backward-compat with legacy `length`+`width`
+- **ValidatorTests** (9) — required fields, unit errors, negative values, geometric sanity, warnings (low cover, high stirrup spacing), slab-specific dimension requirement
+- **FinalOrderTests** (3) — grouping by diameter, 5% wastage, ceil rounding
+- **DoubleCheckTests** (2) — clean rows pass, corrupted rows are detected
+
+Run with: `python -m unittest tests.py -v`
+All 33 tests pass.
+
+---
+
+## 🧪 Hand-verification of slab math (new in v2)
+
+Slab inputs: `short_span=3500, long_span=5000, cover=20, main_bar_dia=10mm @ 150mm, dist_bar_dia=8mm @ 200mm, hook_type=135°`
+
+**Main bars** (run along shorter span):
+- Cutting length = 3500 − 2(20) + 2(10×10) = 3500 − 40 + 200 = **3660 mm** ✓ (matches PDF)
+- Quantity = ⌊(5000 − 40)/150⌋ + 1 = ⌊33.07⌋ + 1 = **34** ✓
+- Total length = 3.660 × 34 = 124.44 m ✓
+- Weight = 124.44 × (10²/162) = 124.44 × 0.617 = **76.81 kg** ✓
+
+**Distribution bars** (run along longer span, NO hooks):
+- Cutting length = 5000 − 2(20) = **4960 mm** ✓
+- Quantity = ⌊(3500 − 40)/200⌋ + 1 = ⌊17.3⌋ + 1 = **18** ✓
+- Total length = 4.960 × 18 = 89.28 m ✓
+- Weight = 89.28 × (8²/162) = 89.28 × 0.395 = **35.27 kg** ✓
+
+Total slab steel net = 76.81 + 35.27 = **112.08 kg** ✓ (matches PDF "TOTAL" row)
+With 5% wastage = 117.68 kg ✓ (matches PDF "GRAND TOTAL")
+
+---
+
+## 🚀 What you should do next
+
+1. Replace your old folder with the `bbs_app/` from the new zip.
+2. `cd backend && pip install -r requirements.txt`
+3. `python -m unittest tests.py -v` — confirm all 33 tests pass on your machine.
+4. `python app.py` — open http://localhost:5000.
+5. Try toggling Beam → Column → Slab and notice how the form sections change.
+6. For slab, enter shorter & longer spans separately — the math is now correct.

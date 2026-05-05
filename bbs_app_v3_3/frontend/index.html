@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1F4E78" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>BBS Automation — Bar Bending Schedule</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ============================================
+       BASE TYPOGRAPHY & THEMING
+       ============================================ */
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-text-size-adjust: 100%;
+      overflow-x: hidden;       /* prevent horizontal scroll on small screens */
+    }
+    .card-shadow { box-shadow: 0 4px 16px -2px rgba(31, 78, 120, 0.08), 0 2px 6px rgba(0,0,0,0.04); }
+    .toggle-btn.active { background: #1F4E78; color: white; box-shadow: 0 4px 10px rgba(31,78,120,.3); }
+    .input-field { transition: all .15s ease; }
+    .input-field:focus { box-shadow: 0 0 0 3px rgba(31,78,120,.15); border-color: #1F4E78; outline: none; }
+    .spinner { border-top-color: transparent; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden-section { display: none; }
+
+    /* ============================================
+       MOBILE-FIRST INPUT SIZING
+       Prevents iOS zoom on focus (needs >=16px)
+       and ensures 44x44 minimum touch target.
+       ============================================ */
+    input[type="number"], input[type="text"], select {
+      font-size: 16px;          /* prevents auto-zoom on iOS */
+      min-height: 44px;         /* WCAG/Apple touch target */
+    }
+    button {
+      min-height: 44px;
+      touch-action: manipulation;
+    }
+
+    /* ============================================
+       RESPONSIVE TABLES
+       Strategy: keep table on tablet/desktop,
+       collapse to "card view" on mobile (<640px).
+       ============================================ */
+    .responsive-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .table-row:nth-child(even) { background: #f8fafc; }
+
+    @media (max-width: 639px) {
+      /* Hide actual table headers on mobile, show inline labels instead */
+      .responsive-table thead { display: none; }
+      .responsive-table tbody, .responsive-table tr,
+      .responsive-table td { display: block; width: 100%; }
+      .responsive-table tr {
+        margin-bottom: 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 8px 12px;
+        background: white;
+      }
+      .responsive-table tr:nth-child(even) { background: #f8fafc; }
+      .responsive-table td {
+        text-align: right !important;
+        padding: 6px 0 !important;
+        border-bottom: 1px dashed #f1f5f9;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 13px;
+      }
+      .responsive-table td:last-child { border-bottom: none; }
+      .responsive-table td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        color: #64748b;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        text-align: left;
+        margin-right: 8px;
+        flex: 1;
+      }
+    }
+
+    /* ============================================
+       SCROLLABLE TABLE FALLBACK (tablet)
+       For very wide tables on small tablets — give horizontal scroll affordance
+       ============================================ */
+    .scroll-x {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+    }
+    .scroll-x::-webkit-scrollbar { height: 6px; }
+    .scroll-x::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+    /* ============================================
+       CALCULATION STEPS — wrap on mobile
+       ============================================ */
+    .steps-panel {
+      font-family: 'SF Mono', Menlo, Consolas, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+
+    /* Safe-area padding for notched phones */
+    @supports (padding: max(0px)) {
+      .safe-px { padding-left: max(1rem, env(safe-area-inset-left));
+                 padding-right: max(1rem, env(safe-area-inset-right)); }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+  <header class="bg-gradient-to-r from-[#1F4E78] to-[#2E7CB6] text-white py-4 sm:py-6 shadow-lg">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 safe-px flex items-center justify-between gap-3">
+      <div class="min-w-0 flex-1">
+        <h1 class="text-xl sm:text-2xl md:text-3xl font-bold flex items-center gap-2 sm:gap-3">
+          <span class="shrink-0">🏗️</span>
+          <span class="truncate">BBS Automation</span>
+        </h1>
+        <p class="text-blue-100 text-xs sm:text-sm mt-0.5 sm:mt-1 leading-tight">
+          Bar Bending Schedule generator — IS 456 / IS 2502 compliant
+        </p>
+      </div>
+      <div class="hidden md:block text-right text-sm text-blue-100 shrink-0">
+        <div>Production-ready</div>
+        <div class="opacity-80">v2.0 · Engineering Verified</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 safe-px py-4 sm:py-6 lg:py-8 grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+
+    <!-- LEFT: Input form -->
+    <section class="lg:col-span-1 bg-white rounded-xl card-shadow p-4 sm:p-5 md:p-6 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+      <h2 class="text-base sm:text-lg font-semibold text-slate-800 mb-3 sm:mb-4">Structural Input</h2>
+
+      <!-- Element type toggle -->
+      <div class="mb-4 sm:mb-5">
+        <label class="text-xs font-medium text-slate-600 uppercase tracking-wide">Element Type</label>
+        <div class="grid grid-cols-3 gap-2 mt-2">
+          <button data-type="beam"   class="toggle-btn active py-2.5 sm:py-2 rounded-lg text-sm font-medium border border-slate-200">Beam</button>
+          <button data-type="column" class="toggle-btn py-2.5 sm:py-2 rounded-lg text-sm font-medium border border-slate-200 bg-slate-50 text-slate-700">Column</button>
+          <button data-type="slab"   class="toggle-btn py-2.5 sm:py-2 rounded-lg text-sm font-medium border border-slate-200 bg-slate-50 text-slate-700">Slab</button>
+        </div>
+      </div>
+
+      <form id="bbsForm" class="space-y-3">
+
+        <!-- ============= BEAM / COLUMN dimensions ============= -->
+        <div id="beamColumnDims">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs font-medium text-slate-600">Width (mm)</label>
+              <input name="width" type="number" step="any" value="300"
+                class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-600">
+                <span class="dim-depth-label">Depth (mm)</span>
+              </label>
+              <input name="depth" type="number" step="any" value="450"
+                class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <label class="text-xs font-medium text-slate-600">
+              <span class="dim-length-label">Length / Span (mm)</span>
+            </label>
+            <input name="length" type="number" step="any" value="6000"
+              class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+          </div>
+        </div>
+
+        <!-- ============= SLAB dimensions ============= -->
+        <div id="slabDims" class="hidden-section">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs font-medium text-slate-600">Shorter Span (mm)</label>
+              <input name="short_span" type="number" step="any" value="3500"
+                class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-600">Longer Span (mm)</label>
+              <input name="long_span" type="number" step="any" value="5000"
+                class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            </div>
+          </div>
+        </div>
+
+        <!-- ============= COVER (always shown) ============= -->
+        <div>
+          <label class="text-xs font-medium text-slate-600">Clear Cover (mm)</label>
+          <input name="cover" type="number" step="any" value="25"
+            class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+        </div>
+
+        <hr class="my-3 border-slate-200" />
+
+        <!-- ============= MAIN BARS ============= -->
+        <div class="text-xs uppercase font-semibold text-slate-500 tracking-wide">Main Bars</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs font-medium text-slate-600">Diameter (mm)</label>
+            <input name="main_bar_dia" type="number" step="any" value="16"
+              class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+          </div>
+          <!-- Beam/Column: quantity. Slab: spacing -->
+          <div id="mainQtyField">
+            <label class="text-xs font-medium text-slate-600">Quantity</label>
+            <input name="main_bar_qty" type="number" value="4"
+              class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+          </div>
+          <div id="mainSpacingField" class="hidden-section">
+            <label class="text-xs font-medium text-slate-600">Spacing (mm)</label>
+            <input name="main_bar_spacing" type="number" step="any" value="150"
+              class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+          </div>
+        </div>
+
+        <hr class="my-3 border-slate-200" />
+
+        <!-- ============= STIRRUPS (Beam only) ============= -->
+        <div id="stirrupSection">
+          <div class="text-xs uppercase font-semibold text-slate-500 tracking-wide">Stirrups</div>
+          <div class="grid grid-cols-2 gap-3 mt-2">
+            <div>
+              <label class="text-xs font-medium text-slate-600">Diameter (mm)</label>
+              <input name="stirrup_dia" type="number" step="any" value="8"
+                class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-600">Spacing (mm)</label>
+              <input name="stirrup_spacing" type="number" step="any" value="150"
+                class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            </div>
+          </div>
+        </div>
+
+        <!-- ============= TIES (Column only) ============= -->
+        <div id="tieSection" class="hidden-section">
+          <div class="text-xs uppercase font-semibold text-slate-500 tracking-wide">Lateral Ties</div>
+          <div class="grid grid-cols-2 gap-3 mt-2">
+            <div>
+              <label class="text-xs font-medium text-slate-600">Diameter (mm)</label>
+              <input name="tie_dia" type="number" step="any" value="8"
+                class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-600">Spacing (mm)</label>
+              <input name="tie_spacing" type="number" step="any" value="200"
+                class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            </div>
+          </div>
+        </div>
+
+        <!-- ============= DISTRIBUTION BARS (Slab only) ============= -->
+        <div id="distSection" class="hidden-section">
+          <div class="text-xs uppercase font-semibold text-slate-500 tracking-wide">Distribution Bars</div>
+          <div class="grid grid-cols-2 gap-3 mt-2">
+            <div>
+              <label class="text-xs font-medium text-slate-600">Diameter (mm)</label>
+              <input name="dist_bar_dia" type="number" step="any" value="8"
+                class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-600">Spacing (mm)</label>
+              <input name="dist_bar_spacing" type="number" step="any" value="200"
+                class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            </div>
+          </div>
+        </div>
+
+        <!-- ============= COMMON: hook + lap ============= -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs font-medium text-slate-600">Hook Type</label>
+            <select name="hook_type"
+              class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
+              <option value="135" selected>135°</option>
+              <option value="90">90°</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-medium text-slate-600">Lap Length (mm)</label>
+            <input name="lap_length" type="number" step="any" value="0"
+              class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+          </div>
+        </div>
+
+        <!-- Quantity-mode selector (controls stirrup/tie/slab-bar count rounding) -->
+        <div class="pt-1">
+          <label class="text-xs font-medium text-slate-600">
+            Quantity Mode
+            <span class="text-slate-400 font-normal ml-1" id="qtyModeHint">— floor(L/s) + 1</span>
+          </label>
+          <select name="qty_mode" id="qtyModeSelect"
+            class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
+            <option value="standard"     selected>Standard — floor(L/s) + 1</option>
+            <option value="conservative">Conservative — +1 extra (site safety)</option>
+            <option value="exact">Exact — ceil(L/s) + 1</option>
+          </select>
+        </div>
+
+        <!-- Engineering Verified Mode toggle -->
+        <div class="pt-3 flex items-center gap-2">
+          <input id="engVerifiedMode" type="checkbox" checked class="rounded text-[#1F4E78]" />
+          <label for="engVerifiedMode" class="text-xs text-slate-700 select-none">
+            Engineering Verified Mode (block exports if double-check fails)
+          </label>
+        </div>
+
+        <div class="pt-2 flex gap-2">
+          <button type="submit" id="calcBtn"
+            class="flex-1 bg-[#1F4E78] hover:bg-[#163b5b] text-white py-2.5 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition">
+            <span id="calcSpinner" class="hidden w-4 h-4 border-2 border-white rounded-full spinner"></span>
+            Calculate
+          </button>
+        </div>
+      </form>
+
+      <div id="errorBox" class="hidden mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700"></div>
+      <div id="warnBox"  class="hidden mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800"></div>
+    </section>
+
+    <!-- RIGHT: Results -->
+    <section class="lg:col-span-2 space-y-4 sm:space-y-5 md:space-y-6">
+
+      <div id="emptyState" class="bg-white rounded-xl card-shadow p-8 sm:p-10 md:p-12 text-center">
+        <div class="text-4xl sm:text-5xl mb-3">📐</div>
+        <h3 class="text-base sm:text-lg font-semibold text-slate-800">Awaiting input</h3>
+        <p class="text-sm text-slate-500 mt-1 max-w-md mx-auto">
+          Enter the structural details and tap <b>Calculate</b> to generate the BBS.
+        </p>
+      </div>
+
+      <!-- Verification banner -->
+      <div id="verifyBanner" class="hidden rounded-xl card-shadow p-3 sm:p-4 flex flex-wrap items-center justify-between gap-2"></div>
+
+      <!-- Summary cards -->
+      <div id="summaryCards" class="hidden grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3"></div>
+
+      <!-- BBS Table -->
+      <div id="bbsCard" class="hidden bg-white rounded-xl card-shadow p-4 sm:p-5 md:p-6">
+        <div class="flex items-start justify-between mb-3 sm:mb-4 flex-wrap gap-2">
+          <h3 class="text-base sm:text-lg font-semibold text-slate-800">Bar Bending Schedule</h3>
+          <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+            <button id="toggleSteps"
+              class="flex-1 sm:flex-none px-3 py-2 text-xs font-medium rounded-lg bg-slate-200 hover:bg-slate-300 active:bg-slate-400 text-slate-700">
+              📋 <span class="hidden sm:inline">Show calculation steps</span><span class="sm:hidden">Steps</span>
+            </button>
+            <button id="downloadExcel"
+              class="flex-1 sm:flex-none px-3 py-2 text-xs font-medium rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white">
+              📊 Excel
+            </button>
+            <button id="downloadPdf"
+              class="flex-1 sm:flex-none px-3 py-2 text-xs font-medium rounded-lg bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white">
+              📄 PDF
+            </button>
+          </div>
+        </div>
+        <div class="scroll-x">
+          <table class="responsive-table text-sm">
+            <thead class="bg-[#1F4E78] text-white text-xs uppercase">
+              <tr>
+                <th class="px-3 py-2 text-left">Bar</th>
+                <th class="px-3 py-2 text-left">Element</th>
+                <th class="px-3 py-2 text-left">Description</th>
+                <th class="px-3 py-2">Dia (mm)</th>
+                <th class="px-3 py-2">Cut Len (mm)</th>
+                <th class="px-3 py-2">Qty</th>
+                <th class="px-3 py-2">Total Len (m)</th>
+                <th class="px-3 py-2">Weight (kg)</th>
+              </tr>
+            </thead>
+            <tbody id="bbsTableBody" class="text-slate-700"></tbody>
+          </table>
+        </div>
+
+        <!-- Calculation steps panel -->
+        <div id="stepsPanel" class="hidden mt-4 p-3 sm:p-4 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 steps-panel"></div>
+      </div>
+
+      <!-- Final order -->
+      <div id="orderCard" class="hidden bg-white rounded-xl card-shadow p-4 sm:p-5 md:p-6">
+        <h3 class="text-base sm:text-lg font-semibold text-slate-800 mb-1">Final Steel Order</h3>
+        <p class="text-xs text-slate-500 mb-3 sm:mb-4">Includes 5% wastage · grouped by diameter · 12 m rods (rounded UP)</p>
+        <div class="scroll-x">
+          <table class="responsive-table text-sm">
+            <thead class="bg-slate-700 text-white text-xs uppercase">
+              <tr>
+                <th class="px-3 py-2">Dia (mm)</th>
+                <th class="px-3 py-2">Net Len (m)</th>
+                <th class="px-3 py-2">Net Wt (kg)</th>
+                <th class="px-3 py-2">+5%</th>
+                <th class="px-3 py-2">Order Len (m)</th>
+                <th class="px-3 py-2">Order Wt (kg)</th>
+                <th class="px-3 py-2">12m Rods</th>
+              </tr>
+            </thead>
+            <tbody id="orderTableBody" class="text-slate-700"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <footer class="text-center text-xs text-slate-500 py-6">
+    Built for real construction use · IS 456:2000 · IS 2502:1963
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
