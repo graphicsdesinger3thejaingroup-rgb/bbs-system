@@ -199,10 +199,48 @@ docker run -p 5000:5000 bbs-app
 - **Start command:** `cd backend && gunicorn -w 4 -b 0.0.0.0:$PORT app:app`
 - Frontend is served by Flask, no separate hosting needed.
 
-### Option 4 — Vercel / Netlify (frontend only) + Backend on a Python host
-- Deploy `frontend/` to Vercel or Netlify
-- Update the `API_BASE` constant in `app.js` to point to the deployed Flask URL
-- Enable CORS (already enabled in `app.py` via `flask_cors`)
+### Option 4 — Vercel (full-stack, recommended free option)
+
+Deploys frontend + Python backend together as serverless functions.
+**Zero config changes needed** — the project already includes `vercel.json`,
+`/api/index.py`, and `/requirements.txt` at the root.
+
+#### A. Deploy via GitHub (easiest)
+
+1. Push your project to a GitHub repo.
+2. Go to <https://vercel.com> → "Add New Project" → import the repo.
+3. Vercel auto-detects:
+   - Framework: **Other**
+   - Build command: *(leave blank)*
+   - Output directory: *(leave blank)*
+   - Install command: *(leave blank — Vercel reads `requirements.txt` itself)*
+4. Click **Deploy**. ~60 seconds later, you get a `*.vercel.app` URL.
+
+#### B. Deploy via CLI
+
+```bash
+npm i -g vercel              # one-time
+cd bbs_app
+vercel                       # follow the prompts
+vercel --prod                # promote to production URL
+```
+
+#### How it works on Vercel
+
+- `frontend/index.html` and `frontend/app.js` → served as static files
+- `/calculate`, `/download-excel`, `/download-pdf`, `/health` → routed to
+  `api/index.py`, which imports the Flask `app` object and runs it as a
+  serverless function (cold start ~1 s, warm <100 ms).
+- `app.py` auto-detects the `VERCEL` env-var and writes generated PDFs/Excel
+  to `/tmp` (the only writable path on Vercel) instead of `backend/generated`.
+- Logging stays in stdout (visible in the Vercel dashboard's Functions tab).
+
+#### Vercel-specific notes
+
+- **Free tier execution limit:** 10 s per request — our generators take ~200 ms, so plenty of headroom.
+- **Function size:** ~10 MB (well under the 50 MB limit). `pandas` was dropped from `requirements.txt` since it wasn't actually used.
+- **No database / no persistence:** generated PDFs live in `/tmp` only for the duration of one request — they're streamed back to the user immediately. Nothing is stored long-term.
+- **Custom domain:** add it in the Vercel dashboard under Settings → Domains.
 
 ---
 

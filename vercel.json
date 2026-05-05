@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": { "maxLambdaSize": "20mb" }
+    },
+    {
+      "src": "frontend/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    { "src": "/",                      "dest": "/frontend/index.html" },
+    { "src": "/app.js",                "dest": "/frontend/app.js" },
+    { "src": "/health",                "dest": "/api/index.py" },
+    { "src": "/calculate",             "dest": "/api/index.py" },
+    { "src": "/download-excel",        "dest": "/api/index.py" },
+    { "src": "/download-pdf",          "dest": "/api/index.py" },
+    { "src": "/(.*\\.(html|js|css|png|jpg|jpeg|svg|ico|woff|woff2|ttf))", "dest": "/frontend/$1" },
+    { "src": "/(.*)",                  "dest": "/api/index.py" }
+  ]
+}

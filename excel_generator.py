@@ -60,18 +60,19 @@ def generate_excel(result: Dict[str, Any], out_dir: str, project_name: str = "BB
 
     ws1["A1"] = "Bar Bending Schedule (BBS)"
     ws1["A1"].font = TITLE_FONT
-    ws1.merge_cells("A1:I1")
+    ws1.merge_cells("A1:J1")
     ws1["A2"] = f"Generated: {datetime.now().strftime('%d-%b-%Y %H:%M')} | "\
                 f"Element: {result['summary']['element_type'].title()} | Standard: IS 456 / IS 2502"
     ws1["A2"].font = SUB_FONT
-    ws1.merge_cells("A2:I2")
+    ws1.merge_cells("A2:J2")
 
-    headers = ["Bar Mark", "Description", "Dia (mm)", "Shape",
+    headers = ["Bar Mark", "Element", "Description", "Dia (mm)", "Shape",
                "Cutting Length (mm)", "Quantity", "Total Length (m)",
                "Unit Wt (kg/m)", "Total Weight (kg)"]
 
     body = [
-        [r["bar_mark"], r["description"], r["dia_mm"], r["shape"],
+        [r["bar_mark"], r.get("element_type", "-").title(), r["description"],
+         r["dia_mm"], r["shape"],
          r["cutting_length_mm"], r["quantity"], r["total_length_m"],
          r["unit_weight_kg_m"], r["total_weight_kg"]]
         for r in result["bbs"]
@@ -81,11 +82,23 @@ def generate_excel(result: Dict[str, Any], out_dir: str, project_name: str = "BB
 
     # totals
     ws1.cell(row=next_row, column=1, value="TOTAL").font = Font(bold=True)
-    ws1.cell(row=next_row, column=7, value=result["summary"]["total_length_m"]).font = Font(bold=True)
-    ws1.cell(row=next_row, column=9, value=result["summary"]["total_weight_kg_net"]).font = Font(bold=True)
-    for j in range(1, 10):
+    ws1.cell(row=next_row, column=8, value=result["summary"]["total_length_m"]).font = Font(bold=True)
+    ws1.cell(row=next_row, column=10, value=result["summary"]["total_weight_kg_net"]).font = Font(bold=True)
+    for j in range(1, 11):
         ws1.cell(row=next_row, column=j).fill = PatternFill("solid", fgColor="DCE6F1")
         ws1.cell(row=next_row, column=j).border = BORDER
+
+    # Verification stamp row
+    if "verification" in result:
+        v = result["verification"]
+        next_row += 2
+        ws1.cell(row=next_row, column=1,
+                 value="✓ Engineering Verified" if v["passed"]
+                       else "✗ VERIFICATION FAILED").font = Font(
+                           bold=True,
+                           color="2E7D32" if v["passed"] else "C62828")
+        ws1.cell(row=next_row, column=2,
+                 value=f"({v.get('method', 'double-check')})").font = SUB_FONT
 
     _autosize(ws1)
 

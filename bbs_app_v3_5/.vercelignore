@@ -1,0 +1,22 @@
+# Don't ship local development artifacts to Vercel
+backend/logs/
+backend/generated/
+backend/__pycache__/
+backend/services/__pycache__/
+backend/utils/__pycache__/
+backend/routes/__pycache__/
+backend/tests.py
+**/__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+env/
+.env
+.git/
+.gitignore
+.DS_Store
+Dockerfile
+README.md
+CHANGELOG.md
+*.zip

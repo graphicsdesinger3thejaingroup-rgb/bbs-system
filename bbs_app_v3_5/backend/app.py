@@ -22,8 +22,17 @@ from utils.logger import setup_logger
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-GEN_DIR = os.path.join(BASE_DIR, "generated")
-LOG_DIR = os.path.join(BASE_DIR, "logs")
+
+# On Vercel / serverless: /tmp is the only writable location.
+# Locally: keep using backend/generated/ so files stay near the project.
+_IS_SERVERLESS = bool(os.environ.get("VERCEL") or
+                      os.environ.get("VERCEL_ENV") or
+                      os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+GEN_DIR = "/tmp/bbs_generated" if _IS_SERVERLESS \
+          else os.path.join(BASE_DIR, "generated")
+LOG_DIR = "/tmp/bbs_logs" if _IS_SERVERLESS \
+          else os.path.join(BASE_DIR, "logs")
+
 FRONTEND_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "frontend"))
 
 logger = setup_logger("bbs_app", LOG_DIR)
@@ -138,8 +147,13 @@ def download_pdf():
                             "errors": ["Calculation mismatch — refusing to export."],
                             "verification": result["verification"]}), 500
 
-        path = generate_pdf(result, GEN_DIR,
-                            project_name=payload.get("project_name", "BBS_Report"))
+        path = generate_pdf(
+            result, GEN_DIR,
+            project_name=payload.get("project_name") or "BBS_Report",
+            client_name =payload.get("client_name"),
+            company_name=payload.get("company_name"),
+            logo_path   =payload.get("logo_path"),
+        )
         logger.info("PDF generated: %s", path)
         return send_file(path, as_attachment=True,
                          download_name=os.path.basename(path),

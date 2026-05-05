@@ -123,6 +123,10 @@ function gatherPayload() {
     hook_type:    parseInt(v("hook_type")),
     lap_length:   v("lap_length") || 0,
     qty_mode:     s("qty_mode") || "standard",
+    // Project metadata for PDF cover page (all optional)
+    project_name: s("project_name"),
+    client_name:  s("client_name"),
+    company_name: s("company_name"),
   };
 
   if (currentType === "beam") {

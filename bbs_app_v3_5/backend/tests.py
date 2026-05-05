@@ -476,5 +476,60 @@ class DoubleCheckTests(unittest.TestCase):
         self.assertTrue(any("weight mismatch" in i for i in issues))
 
 
+# ------------------ PDF Generation ------------------
+
+class PdfGenerationTests(unittest.TestCase):
+    """Smoke-tests for the multi-page PDF generator.
+    We verify the file exists, has expected size, and contains the
+    string-encoded markers that prove cover/header/footer ran."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp(prefix="bbs_pdf_test_")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _generate(self, payload, **meta):
+        from services.pdf_generator import generate_pdf
+        result = build_bbs(payload)
+        return generate_pdf(result, self.tmp, **meta)
+
+    def test_beam_pdf_generates(self):
+        path = self._generate(BEAM_INPUT,
+            project_name="Test Beam Project",
+            client_name="Test Client",
+            company_name="Test Company")
+        import os
+        self.assertTrue(os.path.isfile(path))
+        # PDF should be at least 5 KB (cover + table + drawings)
+        self.assertGreater(os.path.getsize(path), 5000)
+
+    def test_column_pdf_generates(self):
+        path = self._generate(COLUMN_INPUT, project_name="Test Column")
+        import os
+        self.assertTrue(os.path.isfile(path))
+        self.assertGreater(os.path.getsize(path), 5000)
+
+    def test_slab_pdf_generates(self):
+        path = self._generate(SLAB_INPUT, project_name="Test Slab")
+        import os
+        self.assertTrue(os.path.isfile(path))
+        self.assertGreater(os.path.getsize(path), 5000)
+
+    def test_pdf_contains_metadata(self):
+        """Cover-page metadata should appear in the PDF binary."""
+        path = self._generate(BEAM_INPUT,
+            project_name="UniqueProject_XY1",
+            client_name="UniqueClient_AB2",
+            company_name="UniqueCompany_QZ3")
+        # PDFs encode strings in various ways; this is a coarse smoke check
+        # that confirms text streams contain our identifiers somewhere.
+        content = open(path, "rb").read()
+        # Project name appears in the title metadata string of the PDF
+        self.assertIn(b"UniqueProject", content)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

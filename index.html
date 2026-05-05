@@ -145,6 +145,31 @@
     <section class="lg:col-span-1 bg-white rounded-xl card-shadow p-4 sm:p-5 md:p-6 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
       <h2 class="text-base sm:text-lg font-semibold text-slate-800 mb-3 sm:mb-4">Structural Input</h2>
 
+      <!-- Project Info (for PDF cover page) — collapsible -->
+      <details class="mb-4 group" id="projectInfoDetails">
+        <summary class="cursor-pointer flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-600 hover:text-[#1F4E78] select-none">
+          <span>📄 Project Info <span class="text-slate-400 font-normal normal-case ml-1">(for PDF cover)</span></span>
+          <span class="text-slate-400 group-open:rotate-180 transition-transform">▾</span>
+        </summary>
+        <div class="mt-3 space-y-2">
+          <div>
+            <label class="text-xs font-medium text-slate-600">Project Name</label>
+            <input name="project_name" type="text" placeholder="e.g. Tower A, Ground Floor"
+              class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label class="text-xs font-medium text-slate-600">Client Name</label>
+            <input name="client_name" type="text" placeholder="e.g. Acme Construction Ltd."
+              class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label class="text-xs font-medium text-slate-600">Company Name</label>
+            <input name="company_name" type="text" placeholder="e.g. XYZ Engineering Consultants"
+              class="input-field mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+          </div>
+        </div>
+      </details>
+
       <!-- Element type toggle -->
       <div class="mb-4 sm:mb-5">
         <label class="text-xs font-medium text-slate-600 uppercase tracking-wide">Element Type</label>
